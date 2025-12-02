@@ -6,10 +6,10 @@ from tqdm import tqdm
 dataset_wmt = Wmt25Dataset()
 dataset_tatoeba = Tatoeba()
 
-dataset_union = ConcatDataset([dataset_tatoeba])
+dataset_union = ConcatDataset([dataset_tatoeba, dataset_wmt])
 
 dataloader = DataLoader(dataset_union, batch_size=4, shuffle=True)
 
 for batch in dataloader:
-    print(batch)
+    pass
 

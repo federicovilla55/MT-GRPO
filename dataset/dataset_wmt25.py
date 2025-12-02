@@ -1,11 +1,12 @@
 from torch.utils.data import Dataset
 from tqdm import tqdm
 import json
+from .dataset_grpo import DatasetGrpo
+from .prompt import prompt_mod
 
-class Wmt25Dataset(Dataset):
-    def __init__(self, lan_source = 'en', lan_target = 'en'):
-        super().__init__()
-
+class Wmt25Dataset(DatasetGrpo):
+    def __init__(self, tokenizer, lan_source = 'en', lan_target = 'en'):
+        super().__init__(tokenizer)
         all_data = []
         all_keys = set()
         with open("data/wmt25-genmt-humeval.jsonl", "r", encoding="utf-8") as f:
@@ -28,4 +29,11 @@ class Wmt25Dataset(Dataset):
 
     def __getitem__(self, index):
         string_el = self.sentences[index]
-        return string_el
+        messages = [
+            {"role": "user", "content": prompt_mod(string_el)}
+        ]
+        text_prompt = super().process_to_return(messages)
+        dict_to_return = {
+          "prompt" : text_prompt,
+        }
+        return dict_to_return
