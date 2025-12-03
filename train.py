@@ -11,13 +11,17 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from dataset.dataset_tatoeba import TatoebaDataset
 from dataset.dataset_wmt25 import Wmt25Dataset
 from tqdm import tqdm
+from model.sentinel import SentinelScorer
+
+
+sentinel_model = SentinelScorer()
 
 def reward_grpo(completions, **kwargs):
-    print(completions)
-    rewards_to_give = []
-    return rewards_to_give
+    rewards_to_give = sentinel_model.assign_score(completions)
+    reward_to_give = 1-np.array(rewards_to_give["scores"])
+    return reward_to_give
 
-path_of_model = "/home/arsood/dl_project/qwen_4b"
+path_of_model = "/home/arsood/qwen_4b"
 tokenizer = AutoTokenizer.from_pretrained(path_of_model)
 model = AutoModelForCausalLM.from_pretrained(
     path_of_model,
@@ -38,11 +42,11 @@ concat_data = ConcatDataset([dataset_tatoeba])
 training_args = GRPOConfig(
     learning_rate=2e-5,
     num_train_epochs=1,
-    per_device_train_batch_size=20,
+    per_device_train_batch_size=12,
     max_completion_length=1024,
     num_generations=4,
     max_prompt_length=2048,
-    fp16=True,
+    fp16=False,
     #output_dir=output_dir,                        
     logging_steps=1,
     temperature = 0.7,
