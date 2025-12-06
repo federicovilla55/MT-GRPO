@@ -1,1 +1,8 @@
 data
+.venv
+__pycache__/
+*.pyc
+qwen_1b/
+*/__pycache__/*
+*/*.pyc
+logs/
