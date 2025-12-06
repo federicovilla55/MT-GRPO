@@ -2,7 +2,11 @@ data
 .venv
 __pycache__/
 *.pyc
+*.origc
 qwen_1b/
-*/__pycache__/*
-*/*.pyc
+**/__pycache__/
+**/*.pyc
 logs/
+outputModels/
+wandb/
+trainer_output/
