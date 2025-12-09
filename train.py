@@ -42,7 +42,7 @@ def extract_original_sentence(prompt):
     return original_sentence
 
 
-def reward_grpo(completions, **kwargs):
+def reward_sentinel(completions, **kwargs):
     clean_completions = [strip_reasoning(text) for text in completions]
     rewards_to_give = sentinel_model.assign_score(clean_completions)
     reward_to_give = 1-np.array(rewards_to_give["scores"])
@@ -111,6 +111,7 @@ def reward_relative_length(prompts, completions, **kwargs):
     # Reward based on the relative length of the generated sentence compared to the original sentence.
     rewards = []
     
+    # Printing the generated phrase every 10 steps
     if not hasattr(reward_relative_length, "step"):
         reward_relative_length.step = 0
 
@@ -139,7 +140,7 @@ def reward_relative_length(prompts, completions, **kwargs):
             rewards.append(-1.0)
 
         if i == 0 and should_print:
-            # Print example every 10 steps
+            # Print generated content every 10 steps
             print(f"{'='*20}")
             print("Original sentence: ", clean_source)
             print("Generated sentence: ", clean_completion)
@@ -150,7 +151,7 @@ def reward_relative_length(prompts, completions, **kwargs):
 sim_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
 
 def reward_semantic_similarity(prompts, completions, **kwargs):
-    # Reward based on semantic similarity between original and generated sentence.
+    # Reward based on semantic similarity between  and generated sentence.
     rewards = []
     
     for prompt, completion in zip(prompts, completions):
@@ -245,7 +246,7 @@ training_args = GRPOConfig(
 trainer = GRPOTrainer(
     model=model,
     reward_funcs=[
-        reward_grpo, 
+        reward_sentinel, 
         reward_relative_length, 
         reward_avoid_illegal,
         reward_semantic_similarity,
