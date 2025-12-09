@@ -21,9 +21,14 @@ export WANDB_SILENT=true
 
 #Use ${USER}
 export TOKENIZERS_PARALLELISM=false
+export LIT_LOGLEVEL="WARNING"
+
+PROJECT_PATH="/users/fvilla/scratch/DeepLearningProject"
+
+source /users/fvilla/scratch/DeepLearningProject/.venv/bin/activate
 
 CMD="
-/users/fvilla/scratch/DeepLearningProject/.venv/bin/python /users/fvilla/scratch/DeepLearningProject/train.py
+python $PROJECT_PATH/train.py
 "
 
 # .venv/bin/python train.py

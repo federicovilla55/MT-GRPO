@@ -16,6 +16,7 @@ from sentence_transformers import SentenceTransformer, util
 from model.sentinel import SentinelScorer
 import wandb
 
+
 WANDB_API_KEY = os.getenv("WANDB_API_KEY")
 wandb.login(key=WANDB_API_KEY)
 torch.set_float32_matmul_precision('high')
@@ -28,7 +29,8 @@ sentinel_model = SentinelScorer()
 
 def strip_reasoning(text):
     # Remove the <think>...</think> tags and their content, which is not important for scoring and translation purposes.
-    clean_text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    clean_text = text.replace("<|im_end|>", "").replace("<|im_start|>", "").replace("assistant", "").strip()
+    clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL).strip()
     return clean_text
 
 def extract_original_sentence(prompt):
@@ -46,17 +48,63 @@ def reward_grpo(completions, **kwargs):
     reward_to_give = 1-np.array(rewards_to_give["scores"])
     return (reward_to_give / 3.0).tolist()
 
-def reward_avoid_exceeding(prompts, completions, **kwargs):
-    # Penalize completions that exceed 256 tokens
+def reward_avoid_illegal(prompts, completions, **kwargs):
+    # Penalize completions that exceed 256 tokens or contain non ascii characters
     rewards = []
+    penalty_value = -5.0
 
     for completion in completions:
+        current_penalty = 0.0
         clean_completion = strip_reasoning(completion)
+
         if len(tokenizer.encode(clean_completion)) >= 256:
-            rewards.append(-5.0)
-        else:
-            rewards.append(0.0)
+            current_penalty += penalty_value
+
+        if not clean_completion.isascii():
+            current_penalty += penalty_value
+            
+        rewards.append(current_penalty)
+
     return rewards
+
+# Check for grammar correctness
+ppl_model = AutoModelForCausalLM.from_pretrained("gpt2").to(device)
+ppl_tokenizer = AutoTokenizer.from_pretrained("gpt2")
+def reward_grammatical_correctness(prompts, completions, **kwargs):
+    """
+    Rewards the model for grammatical correctness using perplexity.
+    A lower perplexity score results in a higher reward.
+    """
+    rewards = []
+    
+    for completion in completions:
+        clean_completion = strip_reasoning(completion)
+        
+        if not clean_completion:
+            rewards.append(-5.0)
+            continue
+
+        inputs = ppl_tokenizer(clean_completion, return_tensors="pt").to(device)
+        
+        with torch.no_grad():
+            outputs = ppl_model(**inputs, labels=inputs["input_ids"])
+            neg_log_likelihood = outputs.loss
+
+        perplexity = torch.exp(neg_log_likelihood).item()
+
+        # The reward should be higher for lower perplexity.
+        # We can scale it to be in a useful range.
+        # A perplexity < 100 is generally good. A very high one (>500) is bad.
+        # This formula gives a reward close to 0 for low perplexity and a large penalty for high perplexity.
+        reward = 1.0 - (perplexity / 100.0)
+        
+        # Clamp the reward to prevent extreme values
+        reward = max(-5.0, reward) # Ensure penalty is not excessive
+        rewards.append(reward)
+        
+    return rewards
+
+
 
 
 def reward_relative_length(prompts, completions, **kwargs):
@@ -114,19 +162,21 @@ def reward_semantic_similarity(prompts, completions, **kwargs):
         
         similarity = util.pytorch_cos_sim(emb1, emb2).item()
         
+        #elif similarity >= 0.95:
+        #    rewards.append(-1.0)
         if similarity > 0.85:
             rewards.append(0.5)
         elif similarity > 0.70:
             rewards.append(0.0)
         else:
-            rewards.append(-2.0)
+            rewards.append(-4.0)
             
     return rewards
 
 #path_of_model = f"/home/{os.getenv('USER')}/DeepLearningProject/qwen_1b"
 #path_of_model = "/work/scratch/fvilla/grpo_qwen1b_sentinel/checkpoint-6_old"
 
-path_of_model = "/users/fvilla/scratch/DeepLearningProject/qwen_1b"
+path_of_model = "/users/fvilla/scratch/DeepLearningProject/qwen_4b"
 
 tokenizer = AutoTokenizer.from_pretrained(path_of_model)
 
@@ -145,7 +195,7 @@ model = AutoModelForCausalLM.from_pretrained(
 for param in model.parameters():
     param.requires_grad = True
 
-k = 100
+k =198
 num_generations = 8
 batch_size = 32
 
@@ -178,7 +228,7 @@ training_args = GRPOConfig(
     max_prompt_length=512,
     fp16=False,
     bf16=True,
-    output_dir="/users/fvilla/scratch/DeepLearningProject/outputModels/grpo_qwen1b_sentinel_v2",                        
+    output_dir="/users/fvilla/scratch/DeepLearningProject/outputModels/grpo_qwen4b_sentinel_v2",                        
     logging_steps=1,
     repetition_penalty=1.2,
     temperature=0.7,
@@ -197,8 +247,9 @@ trainer = GRPOTrainer(
     reward_funcs=[
         reward_grpo, 
         reward_relative_length, 
-        reward_avoid_exceeding,
-        reward_semantic_similarity
+        reward_avoid_illegal,
+        reward_semantic_similarity,
+        reward_grammatical_correctness
     ],
     args=training_args,
     train_dataset=concat_data,
