@@ -16,6 +16,9 @@ from sentence_transformers import SentenceTransformer, util
 from model.sentinel import SentinelScorer
 import wandb
 
+import language_tool_python
+
+tool = language_tool_python.LanguageTool('en-US')
 
 WANDB_API_KEY = os.getenv("WANDB_API_KEY")
 wandb.login(key=WANDB_API_KEY)
@@ -67,13 +70,10 @@ def reward_avoid_illegal(prompts, completions, **kwargs):
 
     return rewards
 
-# Check for grammar correctness
-ppl_model = AutoModelForCausalLM.from_pretrained("gpt2").to(device)
-ppl_tokenizer = AutoTokenizer.from_pretrained("gpt2")
 def reward_grammatical_correctness(prompts, completions, **kwargs):
     """
-    Rewards the model for grammatical correctness using perplexity.
-    A lower perplexity score results in a higher reward.
+    Rewards the model for grammatical correctness using language_tool_python.
+    Returns higher rewards for text with fewer grammatical errors.
     """
     rewards = []
     
@@ -81,31 +81,27 @@ def reward_grammatical_correctness(prompts, completions, **kwargs):
         clean_completion = strip_reasoning(completion)
         
         if not clean_completion:
-            rewards.append(-5.0)
+            rewards.append(-10.0)
             continue
-
-        inputs = ppl_tokenizer(clean_completion, return_tensors="pt").to(device)
-        
-        with torch.no_grad():
-            outputs = ppl_model(**inputs, labels=inputs["input_ids"])
-            neg_log_likelihood = outputs.loss
-
-        perplexity = torch.exp(neg_log_likelihood).item()
-
-        # The reward should be higher for lower perplexity.
-        # We can scale it to be in a useful range.
-        # A perplexity < 100 is generally good. A very high one (>500) is bad.
-        # This formula gives a reward close to 0 for low perplexity and a large penalty for high perplexity.
-        reward = 1.0 - (perplexity / 100.0)
-        
-        # Clamp the reward to prevent extreme values
-        reward = max(-5.0, reward) # Ensure penalty is not excessive
-        rewards.append(reward)
-        
+            
+        try:
+            matches = tool.check(clean_completion)
+            
+            error_count = len(matches)
+            
+            if error_count == 0:
+                reward_score = 2.0
+            elif error_count <= 2:
+                reward_score = 0.0
+            else:
+                reward_score = max(-10, -2.0 * error_count)
+            
+            rewards.append(reward_score)
+            
+        except Exception as e:
+            rewards.append(0.0)
+    
     return rewards
-
-
-
 
 def reward_relative_length(prompts, completions, **kwargs):
     # Reward based on the relative length of the generated sentence compared to the original sentence.
@@ -127,14 +123,12 @@ def reward_relative_length(prompts, completions, **kwargs):
         
         ratio = len_gen / len_src
         
-        if 0.8 <= ratio <= 1.4:
+        if 0.8 <= ratio <= 1.5:
             rewards.append(1.0)
-            
         elif 1.4 < ratio <= 1.8:
             rewards.append(0.1)
-            
         elif ratio > 1.8:
-            penalty = -3.0 * (ratio - 1.8)
+            penalty = max(-10, -3.0 * (ratio - 1.8))
             rewards.append(penalty)
         else:
             rewards.append(-1.0)
@@ -156,21 +150,19 @@ def reward_semantic_similarity(prompts, completions, **kwargs):
     
     for prompt, completion in zip(prompts, completions):
         source = extract_original_sentence(prompt)
-            
         emb1 = sim_model.encode(source, convert_to_tensor=True, show_progress_bar=False)
         clean_comp = strip_reasoning(completion)
         emb2 = sim_model.encode(clean_comp, convert_to_tensor=True, show_progress_bar=False)
         
         similarity = util.pytorch_cos_sim(emb1, emb2).item()
         
-        #elif similarity >= 0.95:
-        #    rewards.append(-1.0)
-        if similarity > 0.85:
-            rewards.append(0.5)
-        elif similarity > 0.70:
-            rewards.append(0.0)
+        if 0.65 <= similarity <= 0.85:
+            rewards.append(2.0)
+        # Enforce a minimum difference:
+        elif similarity > 0.85:
+            rewards.append(-2.0 * (similarity - 0.85)) 
         else:
-            rewards.append(-4.0)
+            rewards.append(-5.0) 
             
     return rewards
 
@@ -199,8 +191,9 @@ for param in model.parameters():
 k =198
 num_generations = 8
 batch_size = 32
-
 grad_accum_steps = 4
+repetition_penalty = 1.4
+temperature = 0.7
 
 dataset_tatoeba = TatoebaDataset(tokenizer=tokenizer, filtered=True, k=k)
 dataset_wmt25 = Wmt25Dataset(tokenizer=tokenizer)
@@ -218,6 +211,8 @@ print(f"Batch size: {batch_size}")
 print(f"Number of generations: {num_generations}")
 print(f"Gradient accumulation steps: {grad_accum_steps}")
 print(f"Minimum number of characters per considered phrase: {k}")
+print(f"Repetition penalty: {repetition_penalty}")
+print(f"Temperature: {temperature}")
 
 training_args = GRPOConfig(
     learning_rate=2e-5,
@@ -229,18 +224,25 @@ training_args = GRPOConfig(
     max_prompt_length=512,
     fp16=False,
     bf16=True,
-    output_dir="/users/fvilla/scratch/DeepLearningProject/outputModels/grpo_qwen4b_sentinel_v2",                        
+    output_dir="/users/fvilla/scratch/DeepLearningProject/outputModels/grpo_qwen4b_sentinel_v3",                        
     logging_steps=1,
-    repetition_penalty=1.2,
-    temperature=0.7,
+    repetition_penalty=repetition_penalty,
+    temperature=temperature,
     top_p=0.9,
     report_to=["wandb"],
     run_name="grpo_qwen1b_sentinel",
-
     save_strategy="epoch",
     save_total_limit=1,
     load_best_model_at_end=False,
     save_safetensors=True,
+
+    reward_weights=[
+        0.2,   # sentinel
+        1.5,   # relative_length
+        2.0,   # avoid illegal characters or too long
+        1.5,   # semantic_similarity
+        1.5,   # grammatical_correctness
+    ],
 )
 
 trainer = GRPOTrainer(
@@ -252,6 +254,7 @@ trainer = GRPOTrainer(
         reward_semantic_similarity,
         reward_grammatical_correctness
     ],
+
     args=training_args,
     train_dataset=concat_data,
     processing_class = tokenizer,
