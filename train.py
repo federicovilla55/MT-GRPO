@@ -15,6 +15,7 @@ from tqdm import tqdm
 from sentence_transformers import SentenceTransformer, util
 from model.sentinel import SentinelScorer
 import wandb
+import glob
 
 import language_tool_python
 
@@ -46,9 +47,11 @@ def extract_original_sentence(prompt):
 
 
 def reward_sentinel(completions, **kwargs):
+    # Should we aim for a target difficult level on sentinel? 
+    # Like say it should be less than 0.6???
     clean_completions = [strip_reasoning(text) for text in completions]
     rewards_to_give = sentinel_model.assign_score(clean_completions)
-    reward_to_give = 1-np.array(rewards_to_give["scores"])
+    reward_to_give = -np.array(rewards_to_give["scores"])
     return (reward_to_give / 3.0).tolist()
 
 def reward_avoid_illegal(prompts, completions, **kwargs):
@@ -90,9 +93,9 @@ def reward_grammatical_correctness(prompts, completions, **kwargs):
             error_count = len(matches)
             
             if error_count == 0:
-                reward_score = 2.0
+                reward_score = 1.0  # Reward perfect grammar
             elif error_count <= 2:
-                reward_score = 0.0
+                reward_score = 0.2  # Small positive for minor errors
             else:
                 reward_score = max(-10, -2.0 * error_count)
             
@@ -124,9 +127,9 @@ def reward_relative_length(prompts, completions, **kwargs):
         ratio = len_gen / len_src
         
         if 0.8 <= ratio <= 1.5:
-            rewards.append(1.0)
+            rewards.append(1.0)  # Reward good length ratio
         elif 1.4 < ratio <= 1.8:
-            rewards.append(0.1)
+            rewards.append(0.2)
         elif ratio > 1.8:
             penalty = max(-10, -3.0 * (ratio - 1.8))
             rewards.append(penalty)
@@ -156,11 +159,11 @@ def reward_semantic_similarity(prompts, completions, **kwargs):
         
         similarity = util.pytorch_cos_sim(emb1, emb2).item()
         
-        if 0.65 <= similarity <= 0.85:
-            rewards.append(2.0)
+        if 0.5 <= similarity <= 0.9:
+            rewards.append(1.0)  # Reward good semantic similarity range
         # Enforce a minimum difference:
-        elif similarity > 0.85:
-            rewards.append(-2.0 * (similarity - 0.85)) 
+        elif similarity > 0.9:
+            rewards.append(-2.0 * (similarity - 0.9)) 
         else:
             rewards.append(-5.0) 
             
@@ -188,12 +191,14 @@ model = AutoModelForCausalLM.from_pretrained(
 for param in model.parameters():
     param.requires_grad = True
 
-k =198
+k = 198
 num_generations = 8
 batch_size = 32
 grad_accum_steps = 4
 repetition_penalty = 1.4
 temperature = 0.7
+version = 4
+learning_rate = 1e-5
 
 dataset_tatoeba = TatoebaDataset(tokenizer=tokenizer, filtered=True, k=k)
 dataset_wmt25 = Wmt25Dataset(tokenizer=tokenizer)
@@ -205,7 +210,7 @@ concat_data = ConcatDataset([dataset_tatoeba])
 
 print("Starting training...")
 print("Parameters: ")
-print(f"Learning rate: 2e-5")
+print(f"Learning rate: {learning_rate}")
 print(f"Number of epochs: 1")
 print(f"Batch size: {batch_size}")
 print(f"Number of generations: {num_generations}")
@@ -213,9 +218,10 @@ print(f"Gradient accumulation steps: {grad_accum_steps}")
 print(f"Minimum number of characters per considered phrase: {k}")
 print(f"Repetition penalty: {repetition_penalty}")
 print(f"Temperature: {temperature}")
+print(f"Version: {version}")
 
 training_args = GRPOConfig(
-    learning_rate=2e-5,
+    learning_rate=learning_rate,
     num_train_epochs=1,
     per_device_train_batch_size=batch_size,
     gradient_accumulation_steps=grad_accum_steps,
@@ -224,7 +230,7 @@ training_args = GRPOConfig(
     max_prompt_length=512,
     fp16=False,
     bf16=True,
-    output_dir="/users/fvilla/scratch/DeepLearningProject/outputModels/grpo_qwen4b_sentinel_v3",                        
+    output_dir=f"/users/fvilla/scratch/DeepLearningProject/outputModels/grpo_qwen4b_sentinel_v{version}",                        
     logging_steps=1,
     repetition_penalty=repetition_penalty,
     temperature=temperature,
@@ -237,7 +243,7 @@ training_args = GRPOConfig(
     save_safetensors=True,
 
     reward_weights=[
-        0.2,   # sentinel
+        2.0,   # sentinel
         1.5,   # relative_length
         2.0,   # avoid illegal characters or too long
         1.5,   # semantic_similarity
@@ -263,3 +269,30 @@ trainer.train()
 
 print("Training completed.")
 print(f"Model saved to: {training_args.output_dir}")
+
+wandb_run_id = wandb.run.id
+
+checkpoints = sorted(glob.glob(f"{training_args.output_dir}/checkpoint-*"))
+if checkpoints:
+    latest_checkpoint = checkpoints[-1]
+    numSteps = latest_checkpoint.split("checkpoint-")[-1]
+    CHECKPOINT_PATH = latest_checkpoint
+else:
+    CHECKPOINT_PATH = training_args.output_dir
+    numSteps = "final"
+
+ARTIFACT_NAME = f"qwen4b-grpo-checkpoint-{numSteps}-{wandb_run_id}"
+
+artifact = wandb.Artifact(
+    name=ARTIFACT_NAME, 
+    type="model",
+    description=f"Final GRPOTrainer checkpoint of Qwen 4B model from step {numSteps}."
+)
+
+artifact.add_dir(CHECKPOINT_PATH)
+
+wandb.log_artifact(artifact)
+
+wandb.finish()
+
+print(f"Successfully uploaded {ARTIFACT_NAME} to WandB.")
