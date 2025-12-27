@@ -3,38 +3,75 @@ from .scorer import Scorer
 import torch
 from transformers import pipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from transformers import AutoProcessor, SeamlessM4Tv2Model
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+import numpy as np
 
 class CometScorer(Scorer):
-    def __init__(self, path_of_facebook_m4t, path_of_nllb, path_of_helsinki, path_of_comet, device: str = "cuda"):
+    def __init__(self, path_of_google_madlad, path_of_nllb, path_of_helsinki, device: str = "cuda"):
         super(CometScorer, self).__init__()
         model_path = download_model("Unbabel/wmt22-cometkiwi-da")
         self.model = load_from_checkpoint(model_path)
+
         self.nllb_model = pipeline(task="translation", model=path_of_nllb, src_lang="eng_Latn", tgt_lang="ita_Latn", dtype=torch.float16, device='cuda')
-        self.helsinki_transl = pipeline( "translation", model=path_of_helsinki)
+        self.helsinki_transl = pipeline( "translation", model=path_of_helsinki, device='cuda')
 
-        # path_of_model = "/users/fvilla/scratch/DeepLearningProject/qwen_4b"
-        # self.tokenizer = AutoTokenizer.from_pretrained(path_of_model)
-        # self.model = AutoModelForCausalLM.from_pretrained(
-        #     path_of_model,
-        #     torch_dtype=torch.bfloat16,
-        #     device_map="auto",
-        # )
-        self.processor_m4t = AutoProcessor.from_pretrained(path_of_facebook_m4t)
-        self.model_m4t = SeamlessM4Tv2Model.from_pretrained(path_of_facebook_m4t)
+        self.madlad_tokenizer = AutoTokenizer.from_pretrained(path_of_google_madlad)
+        self.model_madlad = AutoModelForSeq2SeqLM.from_pretrained(
+            path_of_google_madlad,
+            device_map="cuda"
+        )
 
-    def assign_score(self, src_text, tran_text):
+    def assign_score(self, src_text):
+        result_nllb = self.nllb_model(src_text)
+        result_helsinki = self.helsinki_transl(src_text)
+
+        texts_for_madlad = ["<2it> "+el for el in src_text]
+        inputs = self.madlad_tokenizer(
+            texts_for_madlad,
+            return_tensors="pt",
+            padding=True,
+            truncation=True
+        ).to('cuda')
+        outputs = self.model_madlad.generate(
+            **inputs,
+            max_new_tokens=300
+        )
+
+        translations = self.madlad_tokenizer.batch_decode(
+            outputs,
+            skip_special_tokens=True
+        )
+
+        result_nllb_values = [d["translation_text"] for d in result_nllb]
+        result_helsinki_values =[d["translation_text"] for d in result_helsinki]
         
-        data = [
-            {
-            "src": origin_text,
-            "mt": to_trans_text,
-            }
-            for origin_text, to_trans_text in zip(src_text, tran_text)
+        num_rep = len(src_text)
+
+        tot_translated = result_nllb_values+result_helsinki_values+translations
+        src_text_repeated = src_text+src_text+src_text
+
+        # data_nllb = [{ "src": origin_text, "mt": to_trans_text,}
+        #     for origin_text, to_trans_text in zip(src_text, result_nllb_values)
+        # ]
+        # data_helsinki = [{ "src": origin_text, "mt": to_trans_text,}
+        #     for origin_text, to_trans_text in zip(src_text, result_helsinki_values)
+        # ]
+        # data_madlad = [{ "src": origin_text, "mt": to_trans_text,}
+        #     for origin_text, to_trans_text in zip(src_text, translations)
+        # ]
+        # model_output_nllb = self.model.predict(data_nllb, batch_size=8, gpus=1)
+        # model_output_helsinki = self.model.predict(data_helsinki, batch_size=8, gpus=1)
+        # model_output_madlad = self.model.predict(data_madlad, batch_size=8, gpus=1)
+
+        data_score = [{ "src": origin_text, "mt": to_trans_text,}
+            for origin_text, to_trans_text in zip(src_text_repeated, tot_translated)
         ]
-        model_output = self.model.predict(data, batch_size=8, gpus=1)
-        print(self.nllb_model(src_text))
-        result = self.helsinki_transl(src_text)
-        print(result)
-        return model_output.scores
+
+        model_output= self.model.predict(data_score, batch_size=8, gpus=1)
+        
+        score_output = np.array(model_output.scores)
+        score_output_reshape = score_output.reshape(3, num_rep)
+        score_output_reshape = score_output_reshape.mean(axis = 0)
+        score_output_reshape = score_output_reshape.tolist()
+        return score_output_reshape
         
