@@ -31,6 +31,12 @@ wandb.init(project="grpo_training")
 
 sentinel_model = SentinelScorer()
 
+
+path_of_google_madlad = "/cluster/scratch/arsood/madlad-google"
+path_of_nllb = "/cluster/scratch/arsood/nllb-200"
+path_of_helsinki = "/cluster/scratch/arsood/helsinki-nlp"
+comet_model = CometScorer(path_of_google_madlad, path_of_nllb, path_of_helsinki)
+
 def strip_reasoning(text):
     # Remove the <think>...</think> tags and their content, which is not important for scoring and translation purposes.
     clean_text = text.replace("<|im_end|>", "").replace("<|im_start|>", "").replace("assistant", "").strip()
@@ -53,6 +59,12 @@ def reward_sentinel(completions, **kwargs):
     rewards_to_give = sentinel_model.assign_score(clean_completions)
     reward_to_give = -np.array(rewards_to_give["scores"])
     return (reward_to_give / 3.0).tolist()
+
+def reward_comet(completions, **kwargs):
+    clean_completions = [strip_reasoning(text) for text in completions]
+    rewards_to_give = comet_score.assign_score(clean_completions)
+    reward_to_give = 1-np.array(rewards_to_give)
+    return (reward_to_give).tolist()
 
 def reward_avoid_illegal(prompts, completions, **kwargs):
     # Penalize completions that exceed 256 tokens or contain non ascii characters
