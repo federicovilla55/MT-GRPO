@@ -16,10 +16,11 @@ from sentence_transformers import SentenceTransformer, util
 from model.sentinel import SentinelScorer
 import wandb
 import glob
+from model.comet import CometScorer
 
 import language_tool_python
 
-tool = language_tool_python.LanguageTool('en-US')
+tool = language_tool_python.LanguageToolPublicAPI('en-US')
 
 WANDB_API_KEY = os.getenv("WANDB_API_KEY")
 wandb.login(key=WANDB_API_KEY)
@@ -29,7 +30,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 wandb.init(project="grpo_training")
 
-sentinel_model = SentinelScorer()
+# sentinel_model = SentinelScorer()
 
 
 path_of_google_madlad = "/cluster/scratch/arsood/madlad-google"
@@ -184,7 +185,7 @@ def reward_semantic_similarity(prompts, completions, **kwargs):
 #path_of_model = f"/home/{os.getenv('USER')}/DeepLearningProject/qwen_1b"
 #path_of_model = "/work/scratch/fvilla/grpo_qwen1b_sentinel/checkpoint-6_old"
 
-path_of_model = "/users/fvilla/scratch/DeepLearningProject/qwen_4b"
+path_of_model = "/cluster/scratch/arsood/qwen_4b_off"
 
 tokenizer = AutoTokenizer.from_pretrained(path_of_model)
 
@@ -242,7 +243,7 @@ training_args = GRPOConfig(
     max_prompt_length=512,
     fp16=False,
     bf16=True,
-    output_dir=f"/users/fvilla/scratch/DeepLearningProject/outputModels/grpo_qwen4b_sentinel_v{version}",                        
+    output_dir=f"/cluster/scratch/arsood/DeepLearningProject/outputModels/grpo_qwen4b_sentinel_v{version}",                        
     logging_steps=1,
     repetition_penalty=repetition_penalty,
     temperature=temperature,
@@ -266,7 +267,7 @@ training_args = GRPOConfig(
 trainer = GRPOTrainer(
     model=model,
     reward_funcs=[
-        reward_sentinel, 
+        reward_comet,
         reward_relative_length, 
         reward_avoid_illegal,
         reward_semantic_similarity,
