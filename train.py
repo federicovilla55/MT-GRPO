@@ -17,10 +17,11 @@ from model.sentinel import SentinelScorer
 import wandb
 import glob
 import textdescriptives as td
+from model.comet import CometScorer
 
 import language_tool_python
 
-tool = language_tool_python.LanguageTool('en-US')
+tool = language_tool_python.LanguageToolPublicAPI('en-US')
 
 WANDB_API_KEY = os.getenv("WANDB_API_KEY")
 wandb.login(key=WANDB_API_KEY)
@@ -30,7 +31,13 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 wandb.init(project="grpo_training")
 
-sentinel_model = SentinelScorer()
+# sentinel_model = SentinelScorer()
+
+
+path_of_google_madlad = "/cluster/scratch/arsood/madlad-google"
+path_of_nllb = "/cluster/scratch/arsood/nllb-200"
+path_of_helsinki = "/cluster/scratch/arsood/helsinki-nlp"
+comet_model = CometScorer(path_of_google_madlad, path_of_nllb, path_of_helsinki)
 
 def strip_reasoning(text):
     # Remove the <think>...</think> tags and their content, which is not important for scoring and translation purposes.
@@ -68,6 +75,12 @@ def reward_sentinel(prompts, completions, **kwargs):
         rewards.append(score)
         
     return rewards
+
+def reward_comet(completions, **kwargs):
+    clean_completions = [strip_reasoning(text) for text in completions]
+    rewards_to_give = comet_score.assign_score(clean_completions)
+    reward_to_give = 1-np.array(rewards_to_give)
+    return (reward_to_give).tolist()
 
 def reward_avoid_illegal(prompts, completions, **kwargs):
     # Penalize completions that exceed 256 tokens or contain non ascii characters
@@ -266,7 +279,7 @@ training_args = GRPOConfig(
 trainer = GRPOTrainer(
     model=model,
     reward_funcs=[
-        reward_sentinel, 
+        reward_comet,
         reward_relative_length, 
         reward_avoid_illegal,
         reward_semantic_similarity,
