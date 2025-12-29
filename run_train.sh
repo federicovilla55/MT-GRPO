@@ -23,6 +23,10 @@ export WANDB_SILENT=true
 export TOKENIZERS_PARALLELISM=false
 export LIT_LOGLEVEL="WARNING"
 
+export WANDB_CACHE_DIR="/iopsstor/scratch/cscs/fvilla/wandb_cache"
+export WANDB_DATA_DIR="/iopsstor/scratch/cscs/fvilla/wandb_cache"
+export WANDB_CONFIG_DIR="/iopsstor/scratch/cscs/fvilla/wandb_cache"
+
 PROJECT_PATH="/users/fvilla/scratch/DeepLearningProject"
 
 source /users/fvilla/scratch/DeepLearningProject/.venv/bin/activate

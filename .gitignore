@@ -5,6 +5,7 @@ __pycache__/
 *.origc
 qwen_1b/
 qwen_4b/
+llama_8b/
 **/__pycache__/
 **/*.pyc
 logs/
