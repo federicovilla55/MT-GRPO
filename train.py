@@ -20,7 +20,17 @@ from model.comet import CometScorer
 
 import language_tool_python
 
-tool = language_tool_python.LanguageToolPublicAPI('en-US')
+# tool = language_tool_python.LanguageToolPublicAPI('en-US')
+# tool = language_tool_python.LanguageTool('en-US')
+# tool = language_tool_python.LanguageTool(
+#     'en-US'
+# )
+
+# tool = language_tool_python.LanguageTool(
+#     'en-US',
+#     remote_server='http://127.0.0.1:8081'  # the port your server is actually running on
+# )
+
 
 WANDB_API_KEY = os.getenv("WANDB_API_KEY")
 wandb.login(key=WANDB_API_KEY)
@@ -63,7 +73,7 @@ def reward_sentinel(completions, **kwargs):
 
 def reward_comet(completions, **kwargs):
     clean_completions = [strip_reasoning(text) for text in completions]
-    rewards_to_give = comet_score.assign_score(clean_completions)
+    rewards_to_give = comet_model.assign_score(clean_completions)
     reward_to_give = 1-np.array(rewards_to_give)
     return (reward_to_give).tolist()
 
@@ -260,7 +270,7 @@ training_args = GRPOConfig(
         1.5,   # relative_length
         2.0,   # avoid illegal characters or too long
         1.5,   # semantic_similarity
-        1.5,   # grammatical_correctness
+        # 1.5,   # grammatical_correctness
     ],
 )
 
@@ -270,8 +280,8 @@ trainer = GRPOTrainer(
         reward_comet,
         reward_relative_length, 
         reward_avoid_illegal,
-        reward_semantic_similarity,
-        reward_grammatical_correctness
+        reward_semantic_similarity
+        # reward_grammatical_correctness
     ],
 
     args=training_args,
