@@ -12,11 +12,15 @@ from tqdm import tqdm
 from dataset.dataset_wmt25 import Wmt25Dataset
 from model.sentinel import SentinelScorer
 
-MODEL_NAME = "/work/scratch/gdemuri/qwen4b/"
+# MODEL_NAME = "/work/scratch/gdemuri/qwen4b/"
+MODEL_NAME = "/work/scratch/gdemuri/llama8b/"
 DATASET_NAME="wmt25"
 BATCH_SIZE=8
 N_SAMPLES=100
-PATH_TO_SAVE=f"/home/gdemuri/dl-proj/results/qwen4b_{DATASET_NAME}_{N_SAMPLES}.jsonl"
+# PATH_TO_SAVE=f"/home/gdemuri/dl-proj/results/qwen4b_{DATASET_NAME}_{N_SAMPLES}.jsonl"
+PATH_TO_SAVE=f"/home/gdemuri/dl-proj/results/llama8b_{DATASET_NAME}_{N_SAMPLES}.jsonl"
+
+
 
 def strip_reasoning(text):
     clean_text = text.replace("<|im_end|>", "").replace("<|im_start|>", "").replace("assistant", "").strip()
@@ -122,6 +126,9 @@ def generate_dataset():
                 }
             )
 
+    del model, tokenizer
+    torch.cuda.empty_cache()
+
     return results
 
 
@@ -143,6 +150,9 @@ def evaluate_with_sentinel(samples):
     for i in range(len(samples)):
         samples[i]["original"]["sentinel_score"] = float(o_scores[i])
         samples[i]["generated"]["sentinel_score"] = float(g_scores[i])
+
+    del sentinel_model
+    torch.cuda.empty_cache()
 
     return samples
 
@@ -205,6 +215,12 @@ def main():
     results = generate_dataset()
 
     results = evaluate_with_sentinel(samples=results)
+
+    import gc
+    gc.collect()
+
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
 
     results = get_translations(samples=results)
 
