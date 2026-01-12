@@ -4,9 +4,9 @@ path_of_google_madlad = "/cluster/scratch/arsood/madlad-google"
 path_of_nllb = "/cluster/scratch/arsood/nllb-200"
 path_of_helsinki = "/cluster/scratch/arsood/helsinki-nlp"
 """
-hf download google/madlad400-3b-mt --local-dir .
-hf download Helsinki-NLP/opus-mt-en-it --local-dir .
-hf download facebook/nllb-200-distilled-1.3B --local-dir .
+hf download google/madlad400-3b-mt --local-dir madlad-google
+hf download Helsinki-NLP/opus-mt-en-it --local-dir helsinki-nlp
+hf download facebook/nllb-200-distilled-1.3B --local-dir nllb-200
 """
 
 
