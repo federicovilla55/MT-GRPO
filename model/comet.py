@@ -13,7 +13,7 @@ class CometScorer(Scorer):
         self.model = load_from_checkpoint(model_path)
 
         self.nllb_model = pipeline(task="translation", model=path_of_nllb, src_lang="eng_Latn", tgt_lang="ita_Latn", dtype=torch.float16, device='cuda', max_length=400)
-        self.helsinki_transl = pipeline( "translation", model=path_of_helsinki, device='cuda', max_length=400)
+        self.helsinki_transl = pipeline( "translation", model=path_of_helsinki, device='cuda', max_length=400, truncation=True)
 
         # self.madlad_tokenizer = AutoTokenizer.from_pretrained(path_of_google_madlad)
         # self.model_madlad = AutoModelForSeq2SeqLM.from_pretrained(
