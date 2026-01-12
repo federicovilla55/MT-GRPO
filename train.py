@@ -16,6 +16,7 @@ from sentence_transformers import SentenceTransformer, util
 from model.sentinel import SentinelScorer
 import wandb
 import glob
+import textdescriptives as td
 from model.comet import CometScorer
 
 import language_tool_python
@@ -55,6 +56,7 @@ def strip_reasoning(text):
     # Remove the <think>...</think> tags and their content, which is not important for scoring and translation purposes.
     clean_text = text.replace("<|im_end|>", "").replace("<|im_start|>", "").replace("assistant", "").strip()
     clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL).strip()
+    clean_text = clean_text.replace("<|im_end|>", "").replace("<|im_start|>", "").replace("assistant", "").strip()
     return clean_text
 
 def extract_original_sentence(prompt):
@@ -65,14 +67,27 @@ def extract_original_sentence(prompt):
         original_sentence = prompt
     return original_sentence
 
-
-def reward_sentinel(completions, **kwargs):
-    # Should we aim for a target difficult level on sentinel? 
-    # Like say it should be less than 0.6???
+def reward_sentinel(prompts, completions, **kwargs):
     clean_completions = [strip_reasoning(text) for text in completions]
-    rewards_to_give = sentinel_model.assign_score(clean_completions)
-    reward_to_give = -np.array(rewards_to_give["scores"])
-    return (reward_to_give / 3.0).tolist()
+    
+    sentinel_scores = -np.array(sentinel_model.assign_score(clean_completions)["scores"])
+    
+    df = td.extract_metrics(text=clean_completions, lang="en", metrics=["readability", "information_theory"])
+    rix = df["rix"].values
+    entropy = df["entropy"].values
+
+    rewards = []
+    for i in range(len(clean_completions)):
+        score = sentinel_scores[i] / 3.0
+        
+        #score += np.clip((rix[i] - 10) / 10, -1.0, 2.0)
+            
+        #if entropy[i] < 0.55:
+        #    score -= 3.0
+
+        rewards.append(score)
+        
+    return rewards
 
 def reward_comet(completions, **kwargs):
     clean_completions = [strip_reasoning(text) for text in completions]
@@ -121,9 +136,9 @@ def reward_grammatical_correctness(prompts, completions, **kwargs):
             if error_count == 0:
                 reward_score = 1.0  # Reward perfect grammar
             elif error_count <= 2:
-                reward_score = 0.2  # Small positive for minor errors
+                reward_score = -0.5
             else:
-                reward_score = max(-10, -2.0 * error_count)
+                reward_score = max(-20, -2.0 * error_count)
             
             rewards.append(reward_score)
             
@@ -141,7 +156,7 @@ def reward_relative_length(prompts, completions, **kwargs):
         reward_relative_length.step = 0
 
     reward_relative_length.step += 1
-    should_print = (reward_relative_length.step % 10 == 0)
+    should_print = (reward_relative_length.step % 5 == 0)
     
     for i, (prompt, completion) in enumerate(zip(prompts, completions)):
         clean_source = extract_original_sentence(prompt)
@@ -152,7 +167,7 @@ def reward_relative_length(prompts, completions, **kwargs):
         
         ratio = len_gen / len_src
         
-        if 0.8 <= ratio <= 1.5:
+        if 0.8 <= ratio <= 1.4:
             rewards.append(1.0)  # Reward good length ratio
         elif 1.4 < ratio <= 1.8:
             rewards.append(0.2)
@@ -160,7 +175,7 @@ def reward_relative_length(prompts, completions, **kwargs):
             penalty = max(-10, -3.0 * (ratio - 1.8))
             rewards.append(penalty)
         else:
-            rewards.append(-1.0)
+            rewards.append(-5.0)
 
         if i == 0 and should_print:
             # Print generated content every 10 steps
@@ -185,13 +200,13 @@ def reward_semantic_similarity(prompts, completions, **kwargs):
         
         similarity = util.pytorch_cos_sim(emb1, emb2).item()
         
-        if 0.5 <= similarity <= 0.9:
+        if 0.5 <= similarity <= 0.90:
             rewards.append(1.0)  # Reward good semantic similarity range
         # Enforce a minimum difference:
-        elif similarity > 0.9:
-            rewards.append(-2.0 * (similarity - 0.9)) 
+        elif similarity > 0.90:
+            rewards.append(-4.0 * (similarity - 0.90)) 
         else:
-            rewards.append(-5.0) 
+            rewards.append(-10.0) 
             
     return rewards
 
@@ -297,30 +312,3 @@ trainer.train(resume_from_checkpoint=True)
 
 print("Training completed.")
 print(f"Model saved to: {training_args.output_dir}")
-
-wandb_run_id = wandb.run.id
-
-checkpoints = sorted(glob.glob(f"{training_args.output_dir}/checkpoint-*"))
-if checkpoints:
-    latest_checkpoint = checkpoints[-1]
-    numSteps = latest_checkpoint.split("checkpoint-")[-1]
-    CHECKPOINT_PATH = latest_checkpoint
-else:
-    CHECKPOINT_PATH = training_args.output_dir
-    numSteps = "final"
-
-ARTIFACT_NAME = f"qwen4b-grpo-checkpoint-{numSteps}-{wandb_run_id}"
-
-artifact = wandb.Artifact(
-    name=ARTIFACT_NAME, 
-    type="model",
-    description=f"Final GRPOTrainer checkpoint of Qwen 4B model from step {numSteps}."
-)
-
-artifact.add_dir(CHECKPOINT_PATH)
-
-wandb.log_artifact(artifact)
-
-wandb.finish()
-
-print(f"Successfully uploaded {ARTIFACT_NAME} to WandB.")
