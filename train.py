@@ -16,10 +16,24 @@ from sentence_transformers import SentenceTransformer, util
 from model.sentinel import SentinelScorer
 import wandb
 import glob
+from model.comet import CometScorer
 
 import language_tool_python
 
-tool = language_tool_python.LanguageTool('en-US')
+# tool = language_tool_python.LanguageToolPublicAPI('en-US')
+tool = language_tool_python.LanguageTool(
+    'en-US',
+    remote_server='http://127.0.0.1:8085'
+)
+# tool = language_tool_python.LanguageTool(
+#     'en-US'
+# )
+
+# tool = language_tool_python.LanguageTool(
+#     'en-US',
+#     remote_server='http://127.0.0.1:8081'  # the port your server is actually running on
+# )
+
 
 WANDB_API_KEY = os.getenv("WANDB_API_KEY")
 wandb.login(key=WANDB_API_KEY)
@@ -29,7 +43,13 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 wandb.init(project="grpo_training")
 
-sentinel_model = SentinelScorer()
+# sentinel_model = SentinelScorer()
+
+
+path_of_google_madlad = "/cluster/scratch/arsood/madlad-google"
+path_of_nllb = "/cluster/scratch/arsood/nllb-200"
+path_of_helsinki = "/cluster/scratch/arsood/helsinki-nlp"
+comet_model = CometScorer(path_of_google_madlad, path_of_helsinki, path_of_nllb)
 
 def strip_reasoning(text):
     # Remove the <think>...</think> tags and their content, which is not important for scoring and translation purposes.
@@ -53,6 +73,12 @@ def reward_sentinel(completions, **kwargs):
     rewards_to_give = sentinel_model.assign_score(clean_completions)
     reward_to_give = -np.array(rewards_to_give["scores"])
     return (reward_to_give / 3.0).tolist()
+
+def reward_comet(completions, **kwargs):
+    clean_completions = [strip_reasoning(text) for text in completions]
+    rewards_to_give = comet_model.assign_score(clean_completions)
+    reward_to_give = 1-np.array(rewards_to_give)
+    return (reward_to_give).tolist()
 
 def reward_avoid_illegal(prompts, completions, **kwargs):
     # Penalize completions that exceed 256 tokens or contain non ascii characters
@@ -172,7 +198,7 @@ def reward_semantic_similarity(prompts, completions, **kwargs):
 #path_of_model = f"/home/{os.getenv('USER')}/DeepLearningProject/qwen_1b"
 #path_of_model = "/work/scratch/fvilla/grpo_qwen1b_sentinel/checkpoint-6_old"
 
-path_of_model = "/users/fvilla/scratch/DeepLearningProject/qwen_4b"
+path_of_model = "/cluster/scratch/arsood/qwen_1_b"
 
 tokenizer = AutoTokenizer.from_pretrained(path_of_model)
 
@@ -193,11 +219,11 @@ for param in model.parameters():
 
 k = 198
 num_generations = 8
-batch_size = 32
-grad_accum_steps = 4
+batch_size = 8
+grad_accum_steps = 1
 repetition_penalty = 1.4
 temperature = 0.7
-version = 4
+version = 2
 learning_rate = 1e-5
 
 dataset_tatoeba = TatoebaDataset(tokenizer=tokenizer, filtered=True, k=k)
@@ -230,31 +256,33 @@ training_args = GRPOConfig(
     max_prompt_length=512,
     fp16=False,
     bf16=True,
-    output_dir=f"/users/fvilla/scratch/DeepLearningProject/outputModels/grpo_qwen4b_sentinel_v{version}",                        
+    output_dir=f"/cluster/scratch/arsood/DeepLearningProject/outputModels/grpo_qwen4b_comet_v{version}",                        
     logging_steps=1,
     repetition_penalty=repetition_penalty,
     temperature=temperature,
     top_p=0.9,
     report_to=["wandb"],
-    run_name="grpo_qwen1b_sentinel",
-    save_strategy="epoch",
-    save_total_limit=1,
-    load_best_model_at_end=False,
-    save_safetensors=True,
-
+    run_name="grpo_qwen1b_comet",
+    # save_strategy="epoch",
+    # save_total_limit=1,
+    # load_best_model_at_end=False,
+    # save_safetensors=True,
+    save_strategy="steps",
+    save_steps=100,
+    save_total_limit=3,
     reward_weights=[
-        2.0,   # sentinel
-        1.5,   # relative_length
-        2.0,   # avoid illegal characters or too long
-        1.5,   # semantic_similarity
-        1.5,   # grammatical_correctness
+        0.4,   # sentinel
+        0.15,   # relative_length
+        0.1,   # avoid illegal characters or too long
+        0.15,   # semantic_similarity
+        0.2,   # grammatical_correctness
     ],
 )
 
 trainer = GRPOTrainer(
     model=model,
     reward_funcs=[
-        reward_sentinel, 
+        reward_comet,
         reward_relative_length, 
         reward_avoid_illegal,
         reward_semantic_similarity,
@@ -265,7 +293,7 @@ trainer = GRPOTrainer(
     train_dataset=concat_data,
     processing_class = tokenizer,
 )
-trainer.train()
+trainer.train(resume_from_checkpoint=True)
 
 print("Training completed.")
 print(f"Model saved to: {training_args.output_dir}")
