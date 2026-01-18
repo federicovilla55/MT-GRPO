@@ -12,6 +12,9 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from torch.utils.data import Subset
 
 from dataset.dataset_wmt25 import Wmt25Dataset
+from dataset.dataset_tatoeba import TatoebaDataset
+from dataset.dataset_wmt19 import Wmt19Dataset
+import os
 
 def strip_reasoning(text):
     clean_text = text.replace("<|im_end|>", "").replace("<|im_start|>", "").replace("assistant", "").strip()
@@ -52,6 +55,10 @@ def load_dataset(dataset_name, tokenizer, n_samples=-1, min_tokens=None, max_tok
     # load dataset
     if dataset_name == "wmt25":
         dataset = Wmt25Dataset(tokenizer=tokenizer)
+    elif dataset_name == "tatoeba":
+        dataset = TatoebaDataset(tokenizer=tokenizer, filtered=True, k=198)
+    elif dataset_name == "wmt19":
+        dataset = Wmt19Dataset(tokenizer=tokenizer)
     else:
         raise ValueError(f"Please specify a supported dataset to load")
 
@@ -81,6 +88,9 @@ def load_dataset(dataset_name, tokenizer, n_samples=-1, min_tokens=None, max_tok
 
 def save_results(results, path_to_save):
     """Save results file to json"""
+    save_dir = os.path.dirname(path_to_save)
+    os.makedirs(save_dir, exist_ok=True)
+    print(path_to_save)
     with open(path_to_save, "w", encoding="utf-8") as f:
         for item in results:
             f.write(

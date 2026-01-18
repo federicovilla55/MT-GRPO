@@ -9,7 +9,6 @@ import numpy as np
 import textdescriptives as td
 import language_tool_python as tlp
 import multiprocessing as mp
-from vllm import LLM, SamplingParams
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM
 from torch.utils.data import Subset
@@ -20,7 +19,7 @@ from sentence_transformers import SentenceTransformer, util
 
 from dataset.dataset_wmt25 import Wmt25Dataset
 from model.sentinel import SentinelScorer
-# from model.comet import CometScorer
+from model.comet import CometScorer
 from evaluation_utils import (
     strip_reasoning,
     clean_string, 
@@ -30,32 +29,33 @@ from evaluation_utils import (
     free_memory
 )
 
-MODEL_NAME="llama8b"
-MODEL = "/work/scratch/gdemuri/llama8b/"
-DATASET_NAME="wmt25"
-BATCH_SIZE=8
-N_SAMPLES=8
-PATH_TO_SAVE=f"/home/gdemuri/dl-proj/results/"
+MODEL_NAME="llama_sentinel_8b_temp=0.9_top_p=0.7_n_sample=100_num_gen=10"
+# MODEL = "/cluster/scratch/arsood/DeepLearningProject/outputModels/grpo_qwen4b_comet_v2/checkpoint-6174"
+# MODEL = "/cluster/scratch/arsood/best_qwen_4b_dl/artifacts/qwen4b-grpo-checkpoint-386-2hy4ani0:v0"
+# MODEL = "/cluster/scratch/arsood/qwen_4b_off"
+MODEL = "/cluster/scratch/arsood/best_llama_8b"
+# MODEL = "/cluster/scratch/arsood/DeepLearningProject/outputModels/grpo_qwen1b_comet_v3/checkpoint-3087"
+MODEL_JUDGE = "/cluster/scratch/arsood/qwen_4b_off"
+DATASET_NAME="wmt19"
+BATCH_SIZE=50
+N_SAMPLES=100
+NUM_GENERATION = 10
+PATH_TO_SAVE=f"/cluster/scratch/arsood/save_result_dl/"
 
-PATH_MADLAD=""
-PATH_NLLB=""
-PATH_HELSINKI=""
+PATH_MADLAD="/cluster/scratch/arsood/madlad-google"
+PATH_NLLB="/cluster/scratch/arsood/nllb-200"
+PATH_HELSINKI="/cluster/scratch/arsood/helsinki-nlp"
 
 def generate_responses(model_name, dataset_name, n_samples, use_vllm=False):
     """
     Generate responses for a given model. If model_name is null, returns original sentence as generated sentence.
     """
     print("Generate responses...")
-    # if None, return original sentences as generated
-    if model_name is None:
-        _, tokenizer = load_model(model_name="meta-llama/Llama-3.2-3B-Instruct")
-        dataset = load_dataset(dataset_name=dataset_name, tokenizer=tokenizer, n_samples=n_samples)
-        results = [{"original": clean_string(strip_reasoning(sample)), "generated": clean_string(strip_reasoning(sample))} for sample in dataset]
 
     if not use_vllm: 
         # get model and dataset
         model, tokenizer = load_model(model_name=model_name)
-        dataset = load_dataset(dataset_name=dataset_name, tokenizer=tokenizer, n_samples=N_SAMPLES, )
+        dataset = load_dataset(dataset_name=dataset_name, tokenizer=tokenizer, n_samples=N_SAMPLES)
 
         # generate responses
         results = []
@@ -63,84 +63,31 @@ def generate_responses(model_name, dataset_name, n_samples, use_vllm=False):
         print("Generating dataset...")
         for start in tqdm(range(0, len(dataset), batch_size)):
             batch = [dataset[i]["prompt"] for i in range(start, min(start + batch_size, len(dataset)))]
+            for num_generation in range(NUM_GENERATION):
+                inputs = tokenizer(batch, return_tensors="pt", padding=True, truncation=True).to(model.device)
+                prompt_width  = inputs["input_ids"].shape[1]
 
-            inputs = tokenizer(batch, return_tensors="pt", padding=True, truncation=True).to(model.device)
-            prompt_width  = inputs["input_ids"].shape[1]
-
-            with torch.no_grad():
-                outs = model.generate(
-                    **inputs,
-                    max_new_tokens=256,
-                    temperature=0.6,
-                    do_sample=True,
-                )
-
-            for i in range(len(batch)):
-                gen_tokens = outs[i, prompt_width:]
-                decoded = tokenizer.decode(gen_tokens, skip_special_tokens=True)
-                decoded = strip_reasoning(decoded)
-
-                results.append(
-                    {
-                        "original": clean_string(strip_reasoning(batch[i])),
-                        "generated": decoded,
-                    }
-                )
-    else:
-        llm = LLM(
-            model=model_name,
-            dtype="half",
-            tensor_parallel_size=1,
-            gpu_memory_utilization=0.9,  # lower if you OOM (0.65-0.75)
-            max_model_len=2048,           # keep modest for low VRAM
-            enforce_eager=False,
-            max_num_seqs=1,
-            # cpu_offload_gb=4,
-            # swap_space=4,                 # CPU swap (GiB) if needed
-            trust_remote_code=True,
-        )
-
-        sampling = SamplingParams(
-            max_tokens=256,
-            temperature=0.6,
-            top_p=1.0,
-        )
-
-        # load dataset
-        tokenizer = llm.get_tokenizer()
-        dataset = load_dataset(dataset_name=dataset_name, tokenizer=tokenizer, n_samples=n_samples)
-
-        # generate
-        results = []
-        batch_size = BATCH_SIZE
-        print("Generating dataset...")
-        for start in tqdm(range(0, len(dataset), batch_size)):
-            batch = [dataset[i]["prompt"] for i in range(start, min(start + batch_size, len(dataset)))]
-
-            # Apply chat template if available (important for instruct models)
-            formatted_prompts = []
-            for p in batch:
-                formatted_prompts.append(
-                    tokenizer.apply_chat_template(
-                        [{"role": "user", "content": p}],
-                        tokenize=False,
-                        add_generation_prompt=True,
-                        enable_thinking=False,
+                with torch.no_grad():
+                    outs = model.generate(
+                        **inputs,
+                        max_new_tokens=256,
+                        temperature=0.9,
+                        do_sample=True,
+                        top_p=0.7,
                     )
-                )
 
-            outputs = llm.generate(formatted_prompts, sampling)
-
-            for p, out in zip(batch, outputs):
-                gen_text = out.outputs[0].text if out.outputs else ""
-                gen_text = strip_reasoning(gen_text)
-
-                results.append(
-                    {
-                        "original": clean_string(strip_reasoning(p)),
-                        "generated": gen_text,
-                    }
-                )
+                for i in range(len(batch)):
+                    gen_tokens = outs[i, prompt_width:]
+                    decoded = tokenizer.decode(gen_tokens, skip_special_tokens=True)
+                    decoded = strip_reasoning(decoded)
+                    # pattern = r"\s*<\|im_end\|>\s*\n<\|im_start\|>assistant\s*$"
+                    pattern = r"\s*<\|eot_id\|>\s*<\|start_header_id\|>assistant<\|end_header_id\|>\s*"
+                    results.append(
+                        {
+                            "original": re.sub(pattern, "", clean_string(strip_reasoning(batch[i]))),
+                            "generated": decoded,
+                        }
+                    )
 
     return results
 
@@ -176,17 +123,57 @@ def get_comet_score(samples):
     g_scores = comet_model.assign_score(generated)
 
     for i in range(len(samples)):
-        samples[i]["translation_difficulty"] = {}
+        # samples[i]["translation_difficulty"] = {}
         samples[i]["translation_difficulty"]["comet_score"] = float(g_scores[i])
 
     return samples
+
+def get_sentinel_score_original(samples):
+    """
+    Adds sentinel scores in-place:
+      samples[i]["translation_difficulty"]["sentinel_score"]
+    """
+    print("Getting sentinel scores...")
+    sentinel_model = SentinelScorer()
+
+    generated = [s["original"] for s in samples]
+
+    g_scores = sentinel_model.assign_score(generated)["scores"]
+
+    for i in range(len(samples)):
+        samples[i]["translation_difficulty_original"] = {}
+        samples[i]["translation_difficulty_original"]["sentinel_score"] = float(g_scores[i])
+
+    return samples
+
+def get_comet_score_original(samples):
+    """
+    Adds comet scores in-place:
+        samples[i]["translation_difficulty"]["comet_score"]
+    """
+    print("Getting comet scores...")
+    comet_model = CometScorer(PATH_MADLAD, PATH_HELSINKI, PATH_NLLB)
+
+    generated = [s["original"] for s in samples]
+
+    g_scores = comet_model.assign_score(generated)
+
+    for i in range(len(samples)):
+        # samples[i]["translation_difficulty"] = {}
+        samples[i]["translation_difficulty_original"]["comet_score"] = float(g_scores[i])
+
+    return samples
+
 
     
 def get_grammatical_errors(samples):
     """Update JSON with grammatical errors"""
     print("Getting grammatical errors...")
     
-    tool = tlp.LanguageTool('en-US')
+    tool = tlp.LanguageTool(
+            'en-US',
+            remote_server='http://127.0.0.1:8085'
+        )
 
     for sample in samples:
         text = sample.get("generated", "")
@@ -275,7 +262,7 @@ def get_complexity_scores(samples):
 
     return samples
 
-def get_judge_responses(samples):
+def get_judge_responses(samples, model_name, use_vllm = False):
     """
     Query a judge model (Llama 3.1 8B Instruct) via vLLM to score:
       - naturalness (0-100)
@@ -294,21 +281,8 @@ def get_judge_responses(samples):
 
     judge_model_name = "Qwen/Qwen3-4B"
 
-    llm = LLM(
-        model=judge_model_name,
-        dtype="half",
-        tensor_parallel_size=1,
-        gpu_memory_utilization=0.80,  # lower if you OOM (e.g., 0.70)
-        max_model_len=2048,           # keep small for low VRAM
-        enforce_eager=False,
-        trust_remote_code=True,
-    )
-
-    sampling = SamplingParams(
-        temperature=0.0,
-        top_p=1.0,
-        max_tokens=1024,
-    )
+    if not use_vllm:
+        model, tokenizer = load_model(model_name=model_name)
 
     prompt_template = ("""
         Analyze the following text and return the answer in JSON. 
@@ -325,22 +299,52 @@ def get_judge_responses(samples):
         """
     )
 
-    tok = llm.get_tokenizer()
-
-    # Build prompts using the model's chat template when available
     prompts = []
     for text in generated:
         user_msg = prompt_template.format(SOURCE_TEXT=text)
         prompts.append(
-            tok.apply_chat_template(
+            tokenizer.apply_chat_template(
                 [{"role": "user", "content": user_msg}],
                 tokenize=False,
                 add_generation_prompt=True,
                 enable_thinking=False,
             )
         )
-    outputs = llm.generate(prompts, sampling)
 
+    batch_size = 50
+
+    all_outputs = []
+
+    for i in tqdm(range(0, len(prompts), batch_size)):
+        batch_prompts = prompts[i:i + batch_size]
+
+        inputs = tokenizer(
+            batch_prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+        ).to(model.device)
+
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=512,
+                do_sample=False,
+                temperature=0.0,
+            )
+
+        # trim generation (same logic you already use)
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):]
+            for in_ids, out_ids in zip(inputs.input_ids, outputs)
+        ]
+
+        decoded = tokenizer.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True
+        )
+
+        all_outputs.extend(decoded)
+    outputs = all_outputs
     def _extract_json_from_response(text):
         """Extract a JSON object from  model output"""
         text = text.strip()
@@ -376,7 +380,7 @@ def get_judge_responses(samples):
         samples[i].setdefault("complexity_score", {})
         samples[i].setdefault("diversity_score", {})
 
-        text_out = out.outputs[0].text
+        text_out = out#.outputs[0].text
         parsed = _extract_json_from_response(text_out)
 
         if not parsed:
@@ -396,10 +400,10 @@ def get_judge_responses(samples):
         else:
             topics = None
 
-        samples["complexity_score"]["naturalness"][i] = naturalness
-        samples["complexity_score"]["word_rarity"][i] = word_rarity
-        samples["complexity_score"]["syntax_complexity"][i] = syntax_complexity
-        samples["diversity_score"]["topics"][i] = topics
+        samples[i]["complexity_score"]["naturalness"] = naturalness
+        samples[i]["complexity_score"]["word_rarity"] = word_rarity
+        samples[i]["complexity_score"]["syntax_complexity"] = syntax_complexity
+        samples[i]["diversity_score"]["topics"] = topics
 
     return samples
 
@@ -427,6 +431,11 @@ def aggregate_all_results(samples):
     for m in translation_difficulty_metrics:
         vals = collect(["translation_difficulty", m])
         agg["translation_difficulty_score"][m] = float(np.mean(vals))
+
+    agg["translation_difficulty_original_score"] = {}
+    for m in translation_difficulty_metrics:
+        vals = collect(["translation_difficulty_original", m])
+        agg["translation_difficulty_original_score"][m] = float(np.mean(vals))
 
     # === Complexity metrics 
     complexity_metrics = [
@@ -482,8 +491,15 @@ def main():
     free_memory()
     
     # Comet
-    # results = get_comet_score(samples=results)
-    # free_memory()
+    results = get_comet_score(samples=results)
+    free_memory()
+
+    results = get_sentinel_score_original(samples=results)
+    free_memory()
+    
+    # Comet
+    results = get_comet_score_original(samples=results)
+    free_memory()
 
     # === Grammatical errors
     results = get_grammatical_errors(samples=results)
@@ -494,20 +510,19 @@ def main():
     free_memory()
 
     # === LLM Judge: Complexity + Diversity of corpus 
-    results = get_judge_responses(samples=results)
+    results = get_judge_responses(samples=results, model_name = MODEL_JUDGE)
     free_memory()
-    
-    # === Save results
-    save_results(results=results,
-                 path_to_save=PATH_TO_SAVE)
+    # # === Save results
+    # save_results(results=results,
+    #              path_to_save=PATH_TO_SAVE)
     
     # === Aggregate results
-    agg = aggregate_all_results(results=results, 
-                          path_to_save=PATH_TO_SAVE + f"{MODEL_NAME}_{DATASET_NAME}_{N_SAMPLES}/{MODEL_NAME}_{DATASET_NAME}_{N_SAMPLES}.jsonl")
+    # agg = aggregate_all_results(results)
     
     # === Save aggregate results
-    save_results(results=agg,
-                 path_to_save=PATH_TO_SAVE + f"{MODEL_NAME}_{DATASET_NAME}_{N_SAMPLES}/aggregated.jsonl")
+    path_to_save_file = PATH_TO_SAVE + f"{MODEL_NAME}_{DATASET_NAME}_{N_SAMPLES}/aggregated.jsonl"
+    save_results(results=results,
+                 path_to_save=path_to_save_file)
 
 
 

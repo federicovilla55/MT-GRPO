@@ -22,8 +22,8 @@ class CometScorer(Scorer):
         # )
 
     def assign_score(self, src_text):
-        result_nllb = self.nllb_model(src_text)
-        result_helsinki = self.helsinki_transl(src_text)
+        result_nllb = self.nllb_model(src_text, batch_size=8, max_new_tokens=256)
+        result_helsinki = self.helsinki_transl(src_text, batch_size=8, max_new_tokens=256)
 
         # texts_for_madlad = ["<2it> "+el for el in src_text]
         # inputs = self.madlad_tokenizer(

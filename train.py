@@ -44,13 +44,13 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 wandb.init(project="grpo_training")
 
-# sentinel_model = SentinelScorer()
+sentinel_model = SentinelScorer()
 
 
-path_of_google_madlad = "/cluster/scratch/arsood/madlad-google"
-path_of_nllb = "/cluster/scratch/arsood/nllb-200"
-path_of_helsinki = "/cluster/scratch/arsood/helsinki-nlp"
-comet_model = CometScorer(path_of_google_madlad, path_of_helsinki, path_of_nllb)
+# path_of_google_madlad = "/cluster/scratch/arsood/madlad-google"
+# path_of_nllb = "/cluster/scratch/arsood/nllb-200"
+# path_of_helsinki = "/cluster/scratch/arsood/helsinki-nlp"
+# comet_model = CometScorer(path_of_google_madlad, path_of_helsinki, path_of_nllb)
 
 def strip_reasoning(text):
     # Remove the <think>...</think> tags and their content, which is not important for scoring and translation purposes.
@@ -234,11 +234,11 @@ for param in model.parameters():
 
 k = 198
 num_generations = 8
-batch_size = 8
+batch_size = 16
 grad_accum_steps = 1
 repetition_penalty = 1.4
 temperature = 0.7
-version = 2
+version = 3
 learning_rate = 1e-5
 
 dataset_tatoeba = TatoebaDataset(tokenizer=tokenizer, filtered=True, k=k)
@@ -271,7 +271,7 @@ training_args = GRPOConfig(
     max_prompt_length=512,
     fp16=False,
     bf16=True,
-    output_dir=f"/cluster/scratch/arsood/DeepLearningProject/outputModels/grpo_qwen4b_comet_v{version}",                        
+    output_dir=f"/cluster/scratch/arsood/DeepLearningProject/outputModels/grpo_qwen1b_comet_v{version}",                        
     logging_steps=1,
     repetition_penalty=repetition_penalty,
     temperature=temperature,
@@ -283,21 +283,21 @@ training_args = GRPOConfig(
     # load_best_model_at_end=False,
     # save_safetensors=True,
     save_strategy="steps",
-    save_steps=100,
+    save_steps=50,
     save_total_limit=3,
     reward_weights=[
-        0.4,   # sentinel
-        0.15,   # relative_length
-        0.1,   # avoid illegal characters or too long
-        0.15,   # semantic_similarity
-        0.2,   # grammatical_correctness
+        2,   # sentinel
+        1.5,   # relative_length
+        2,   # avoid illegal characters or too long
+        1.5,   # semantic_similarity
+        1.5,   # grammatical_correctness
     ],
 )
 
 trainer = GRPOTrainer(
     model=model,
     reward_funcs=[
-        reward_comet,
+        reward_sentinel,
         reward_relative_length, 
         reward_avoid_illegal,
         reward_semantic_similarity,
@@ -308,7 +308,7 @@ trainer = GRPOTrainer(
     train_dataset=concat_data,
     processing_class = tokenizer,
 )
-trainer.train(resume_from_checkpoint=True)
+trainer.train()
 
 print("Training completed.")
 print(f"Model saved to: {training_args.output_dir}")
