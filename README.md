@@ -30,7 +30,7 @@ Our results demonstrate that MT-GRPO produces high-quality examples that are mor
 The necessary environment and libraries can be set up using either `venv` or `conda`.
 
 ### Using venv
-
+Install python= 3.10.13.
 Create and activate virtual environment:
 
 ```bash
@@ -43,7 +43,7 @@ pip install --upgrade pip
 
 Create and activate conda environment:
 ```bash
-conda create -n deep_learning python=3.11 -y
+conda create -n deep_learning python=3.10.13 -y
 conda activate deep_learning
 ```
 
