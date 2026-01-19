@@ -34,7 +34,7 @@ The necessary environment and libraries can be set up using either `venv` or `co
 Create and activate virtual environment:
 
 ```bash
-python3 -m venv deep_learning
+python -m venv deep_learning
 source deep_learning/bin/activate
 pip install --upgrade pip
 ```
