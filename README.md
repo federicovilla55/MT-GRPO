@@ -28,7 +28,7 @@ Our results demonstrate that MT-GRPO produces high-quality examples that are mor
 
 The necessary environment and libraries can be set up using either `venv` or `conda`.
 
-### Option 1: Using venv
+### Using venv
 
 Create and activate virtual environment:
 
@@ -38,7 +38,7 @@ source deep_learning/bin/activate
 pip install --upgrade pip
 ```
 
-### Option 2: Using Conda
+### Using Conda
 
 Create and activate conda environment:
 ```bash
@@ -46,28 +46,26 @@ conda create -n deep_learning python=3.11 -y
 conda activate deep_learning
 ```
 
-### Install dependencies
+## Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
 ## Resources
 
-### 1. Data Download
+### 1. Datasets Download
 The project requires WMT25 and Tatoeba datasets; they can be downloaded via:
 
 ```bash
 ./download_data.sh
 ```
 
-### 2. Model Download
+### 2. Models Download
 Various translation models are used for evaluating the generated phrases. They are available as Hugging Face models that can be downloaded using:
 
 ```bash
 ./download_models.sh
 ```
-> [!NOTE]
-> This requires the `huggingface-cli`. The script will attempt to install `huggingface_hub` if it's missing.
 
 ## Usage
 
@@ -101,6 +99,6 @@ python evaluation_model.py
 - [qwen-4B-sentinel](https://polybox.ethz.ch/index.php/s/eFioWRGB8oW4fkj): [Qwen-4B-Instruct](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) trained via GRPO using Sentinel, grammar correctness and translation quality as rewards.
 - [qwen-1.7B-comet](https://polybox.ethz.ch/index.php/s/qGptR8RTjEiZc29): [Qwen-1.7B-Instruct](https://huggingface.co/Qwen/Qwen3-1.7B) trained via GRPO using COMET, grammar correctness and translation quality as rewards.
 
-## Requirements
+## Additional System Requirements
 
 - *Java 8* or higher is required for `language_tool_python` (for grammatical error checking reward).

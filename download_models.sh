@@ -1,9 +1,10 @@
 #!/bin/bash
 
 MODELS=(
-    "Helsinki-NLP/opus-mt-en-it:helsinki-nlp"
-    "google/madlad400-3b-mt:madlad-google"
-    "facebook/nllb-200-distilled-1.3B:nllb-200"
+    "Helsinki-NLP/opus-mt-en-it:model/helsinki-nlp"
+    "google/madlad400-3b-mt:model/madlad-google"
+    "facebook/nllb-200-distilled-1.3B:model/nllb-200"
+    "Qwen/Qwen3-1.7B:model/qwen_1_b"
 )
 
 for entry in "${MODELS[@]}"; do

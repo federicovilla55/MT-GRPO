@@ -10,12 +10,19 @@ from model.sentinel import SentinelScorer
 import textdescriptives as td
 import language_tool_python
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+torch.set_float32_matmul_precision('high')
+
+# Language tool for grammar correctness checking
 tool = language_tool_python.LanguageTool(
     'en-US',
     remote_server='http://127.0.0.1:8085'
 )
 
+# Sentinel Model for scoring the hardness of generated phrases.
+sentinel_model = SentinelScorer()
 
+# WanDB Setup if available, otherwise do not send reports to WanDB
 WANDB_API_KEY = os.getenv("WANDB_API_KEY")
 report_to = "none"
 
@@ -25,19 +32,15 @@ if WANDB_API_KEY:
     wandb.init(project="grpo_training")
     report_to = ["wandb"]
 
-torch.set_float32_matmul_precision('high')
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-sentinel_model = SentinelScorer()
-
-
 def strip_reasoning(text):
-    # Remove the <think>...</think> tags and their content, which is not important for scoring and translation purposes.
+    """
+    Remove the <think>...</think> tags from LLM output.
+    """
     clean_text = text.replace("<|im_end|>", "").replace("<|im_start|>", "").replace("assistant", "").strip()
     clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL).strip()
     clean_text = clean_text.replace("<|im_end|>", "").replace("<|im_start|>", "").replace("assistant", "").strip()
     return clean_text
+
 
 def extract_original_sentence(prompt):
     delimiter = "Sentence you have to change: "
@@ -47,7 +50,11 @@ def extract_original_sentence(prompt):
         original_sentence = prompt
     return original_sentence
 
+
 def reward_sentinel(prompts, completions, **kwargs):
+    """
+    Reward model based on SentinelScorer.
+    """
     clean_completions = [strip_reasoning(text) for text in completions]
     
     sentinel_scores = -np.array(sentinel_model.assign_score(clean_completions)["scores"])
@@ -64,14 +71,21 @@ def reward_sentinel(prompts, completions, **kwargs):
         
     return rewards
 
+
 def reward_comet(completions, **kwargs):
+    """
+    Reward model based on CometScorer.
+    """
     clean_completions = [strip_reasoning(text) for text in completions]
     rewards_to_give = comet_model.assign_score(clean_completions)
     reward_to_give = 1-np.array(rewards_to_give)
     return (reward_to_give).tolist()
 
+
 def reward_avoid_illegal(prompts, completions, **kwargs):
-    # Penalize completions that exceed 256 tokens or contain non ascii characters
+    """
+    Penalize completions that exceed 256 tokens or contain non ascii characters.
+    """
     rewards = []
     penalty_value = -5.0
 
@@ -88,6 +102,7 @@ def reward_avoid_illegal(prompts, completions, **kwargs):
         rewards.append(current_penalty)
 
     return rewards
+
 
 def reward_grammatical_correctness(prompts, completions, **kwargs):
     """
@@ -122,8 +137,11 @@ def reward_grammatical_correctness(prompts, completions, **kwargs):
     
     return rewards
 
+
 def reward_relative_length(prompts, completions, **kwargs):
-    # Reward based on the relative length of the generated sentence compared to the original sentence.
+    """
+    Reward based on the relative length of the generated sentence compared to the original sentence.
+    """
     rewards = []
     
     # Printing the generated phrase every 10 steps
@@ -143,7 +161,8 @@ def reward_relative_length(prompts, completions, **kwargs):
         ratio = len_gen / len_src
         
         if 0.8 <= ratio <= 1.4:
-            rewards.append(1.0)  # Reward good length ratio
+            # Reward good length ratio
+            rewards.append(1.0)  
         elif 1.4 < ratio <= 1.8:
             rewards.append(0.2)
         elif ratio > 1.8:
@@ -161,10 +180,13 @@ def reward_relative_length(prompts, completions, **kwargs):
         
     return rewards
 
+
 sim_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
 
 def reward_semantic_similarity(prompts, completions, **kwargs):
-    # Reward based on semantic similarity between  and generated sentence.
+    """
+    Reward based on semantic similarity between original and generated sentence.
+    """
     rewards = []
     
     for prompt, completion in zip(prompts, completions):
@@ -175,18 +197,16 @@ def reward_semantic_similarity(prompts, completions, **kwargs):
         
         similarity = util.pytorch_cos_sim(emb1, emb2).item()
         
+        # Reward good semantic similarity range
+        # But enforce a minimum difference:
         if 0.5 <= similarity <= 0.90:
-            rewards.append(1.0)  # Reward good semantic similarity range
-        # Enforce a minimum difference:
+            rewards.append(1.0)  
         elif similarity > 0.90:
             rewards.append(-4.0 * (similarity - 0.90)) 
         else:
             rewards.append(-10.0) 
             
     return rewards
-
-
-
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 

@@ -32,17 +32,17 @@ from evaluation_utils import (
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MODEL_NAME="llama_sentinel_8b_temp=0.9_top_p=0.7_n_sample=100_num_gen=10"
-MODEL = os.path.join(BASE_DIR, "best_llama_8b")
-MODEL_JUDGE = os.path.join(BASE_DIR, "qwen_4b_off")
+MODEL = os.path.join(BASE_DIR, "model", "best_llama_8b")
+MODEL_JUDGE = os.path.join(BASE_DIR, "model", "qwen_4b_off")
 DATASET_NAME="wmt19"
 BATCH_SIZE=50
 N_SAMPLES=100
 NUM_GENERATION = 10
 PATH_TO_SAVE = os.path.join(BASE_DIR, "results")
 
-PATH_MADLAD = os.path.join(BASE_DIR, "madlad-google")
-PATH_NLLB = os.path.join(BASE_DIR, "nllb-200")
-PATH_HELSINKI = os.path.join(BASE_DIR, "helsinki-nlp")
+PATH_MADLAD = os.path.join(BASE_DIR, "model", "madlad-google")
+PATH_NLLB = os.path.join(BASE_DIR, "model", "nllb-200")
+PATH_HELSINKI = os.path.join(BASE_DIR, "model", "helsinki-nlp")
 
 def generate_responses(model_name, dataset_name, n_samples, use_vllm=False):
     """
@@ -480,11 +480,9 @@ def main():
     results = get_sentinel_score_original(samples=results)
     free_memory()
     
-    # Comet
     results = get_comet_score_original(samples=results)
     free_memory()
 
-    # === Grammatical errors
     results = get_grammatical_errors(samples=results)
     free_memory()
 
