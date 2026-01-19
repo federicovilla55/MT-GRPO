@@ -208,13 +208,13 @@ model = AutoModelForCausalLM.from_pretrained(
 for param in model.parameters():
     param.requires_grad = True
 
-k = 198 # Number of minimum characters for phrases to be considered during training. 
-num_generations = 8 # Number of generations per prompt. 
-batch_size = 16 # Batch size for training. 
-grad_accum_steps = 1 # Gradient accumulation steps. 
-repetition_penalty = 1.4 # Repetition penalty. 
-temperature = 0.7 # Temperature for generation. 
-learning_rate = 1e-5 # Training Learning rate. 
+k = 198
+num_generations = 8
+batch_size = 16
+grad_accum_steps = 1
+repetition_penalty = 1.4
+temperature = 0.7
+learning_rate = 1e-5
 
 dataset_tatoeba = TatoebaDataset(tokenizer=tokenizer, filtered=True, k=k)
 dataset_wmt25 = Wmt25Dataset(tokenizer=tokenizer)

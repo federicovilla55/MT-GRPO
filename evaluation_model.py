@@ -32,11 +32,7 @@ from evaluation_utils import (
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MODEL_NAME="llama_sentinel_8b_temp=0.9_top_p=0.7_n_sample=100_num_gen=10"
-# MODEL = "/cluster/scratch/arsood/DeepLearningProject/outputModels/grpo_qwen4b_comet_v2/checkpoint-6174"
-# MODEL = "/cluster/scratch/arsood/best_qwen_4b_dl/artifacts/qwen4b-grpo-checkpoint-386-2hy4ani0:v0"
-# MODEL = "/cluster/scratch/arsood/qwen_4b_off"
 MODEL = os.path.join(BASE_DIR, "best_llama_8b")
-# MODEL = "/cluster/scratch/arsood/DeepLearningProject/outputModels/grpo_qwen1b_comet_v3/checkpoint-3087"
 MODEL_JUDGE = os.path.join(BASE_DIR, "qwen_4b_off")
 DATASET_NAME="wmt19"
 BATCH_SIZE=50
@@ -82,7 +78,6 @@ def generate_responses(model_name, dataset_name, n_samples, use_vllm=False):
                     gen_tokens = outs[i, prompt_width:]
                     decoded = tokenizer.decode(gen_tokens, skip_special_tokens=True)
                     decoded = strip_reasoning(decoded)
-                    # pattern = r"\s*<\|im_end\|>\s*\n<\|im_start\|>assistant\s*$"
                     pattern = r"\s*<\|eot_id\|>\s*<\|start_header_id\|>assistant<\|end_header_id\|>\s*"
                     results.append(
                         {
@@ -125,7 +120,6 @@ def get_comet_score(samples):
     g_scores = comet_model.assign_score(generated)
 
     for i in range(len(samples)):
-        # samples[i]["translation_difficulty"] = {}
         samples[i]["translation_difficulty"]["comet_score"] = float(g_scores[i])
 
     return samples
@@ -143,7 +137,6 @@ def get_sentinel_score_original(samples):
     g_scores = sentinel_model.assign_score(generated)["scores"]
 
     for i in range(len(samples)):
-        samples[i]["translation_difficulty_original"] = {}
         samples[i]["translation_difficulty_original"]["sentinel_score"] = float(g_scores[i])
 
     return samples
@@ -161,7 +154,6 @@ def get_comet_score_original(samples):
     g_scores = comet_model.assign_score(generated)
 
     for i in range(len(samples)):
-        # samples[i]["translation_difficulty"] = {}
         samples[i]["translation_difficulty_original"]["comet_score"] = float(g_scores[i])
 
     return samples
@@ -413,7 +405,6 @@ def aggregate_all_results(samples):
     """Aggregate all results into a single dict"""
     agg = {}
     
-    # ---- Helper to safely collect numeric values ----
     def collect(path):
         values = []
         for s in samples:
@@ -423,7 +414,6 @@ def aggregate_all_results(samples):
             values.append(d)
         return values
     
-    # === Difficulty of translation metrics 
     translation_difficulty_metrics = [
         "sentinel_score",
         "comet_score",
@@ -439,7 +429,6 @@ def aggregate_all_results(samples):
         vals = collect(["translation_difficulty_original", m])
         agg["translation_difficulty_original_score"][m] = float(np.mean(vals))
 
-    # === Complexity metrics 
     complexity_metrics = [
         "rix",
         "entropy",
@@ -455,19 +444,15 @@ def aggregate_all_results(samples):
         vals = collect(["complexity_score", m])
         agg["complexity_score"][m] = float(np.mean(vals))
 
-    # === Grammatical errors 
     grammar_vals = collect(["grammatical_errors"])
     agg["grammatical_errors"] = float(np.mean(grammar_vals))
 
-    # === Diversity
-    # num topics
     all_topics = set()
     for s in samples:
         t = s["diversity_score"]["topics"]
         all_topics.update(t)
     num_topics = len(all_topics)
     
-    # embeddings
     embedding_score = get_embeddings_score(samples)
 
     agg["diversity_scores"] = {
@@ -478,7 +463,6 @@ def aggregate_all_results(samples):
 
 
 def main():
-    # === Obtain generations
     results = generate_responses(
         model_name=MODEL,
         dataset_name=DATASET_NAME,
@@ -487,12 +471,9 @@ def main():
     )
     free_memory()
 
-    # === Difficulty of translation
-    # Sentinel 
     results = get_sentinel_score(samples=results)
     free_memory()
     
-    # Comet
     results = get_comet_score(samples=results)
     free_memory()
 
@@ -507,21 +488,12 @@ def main():
     results = get_grammatical_errors(samples=results)
     free_memory()
 
-    # === Remaining complexity
     results = get_complexity_scores(samples=results)
     free_memory()
 
-    # === LLM Judge: Complexity + Diversity of corpus 
     results = get_judge_responses(samples=results, model_name = MODEL_JUDGE)
     free_memory()
-    # # === Save results
-    # save_results(results=results,
-    #              path_to_save=PATH_TO_SAVE)
-    
-    # === Aggregate results
-    # agg = aggregate_all_results(results)
-    
-    # === Save aggregate results
+
     path_to_save_file = PATH_TO_SAVE + f"{MODEL_NAME}_{DATASET_NAME}_{N_SAMPLES}/aggregated.jsonl"
     save_results(results=results,
                  path_to_save=path_to_save_file)
