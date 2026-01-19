@@ -3,7 +3,9 @@ import torch
 from comet import download_model, load_from_checkpoint
 import os
 
-local_model = "/cluster/scratch/arsood/Qwen3-4B-Instruct-2507"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+local_model = os.path.join(BASE_DIR, "Qwen3-4B-Instruct-2507")
 tokenizer = AutoTokenizer.from_pretrained(local_model)
 model = AutoModelForCausalLM.from_pretrained(
     local_model,
@@ -23,7 +25,6 @@ text = tokenizer.apply_chat_template(
 )
 model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
 
-# conduct text completion
 matrix_of_completition = []
 for i in range(10):
     generated_ids = model.generate(

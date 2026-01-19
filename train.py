@@ -1,56 +1,36 @@
-from trl import GRPOTrainer, GRPOConfig
-from datasets import load_dataset
-from torch import nn 
-import torch
-import random
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import ConcatDataset
 import re
 import os
-import json
 import numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from dataset.dataset_tatoeba import TatoebaDataset
 from dataset.dataset_wmt25 import Wmt25Dataset
-from tqdm import tqdm
 from sentence_transformers import SentenceTransformer, util
 from model.sentinel import SentinelScorer
-import wandb
-import glob
 import textdescriptives as td
-from model.comet import CometScorer
-
 import language_tool_python
 
-# tool = language_tool_python.LanguageToolPublicAPI('en-US')
 tool = language_tool_python.LanguageTool(
     'en-US',
     remote_server='http://127.0.0.1:8085'
 )
-# tool = language_tool_python.LanguageTool(
-#     'en-US'
-# )
-
-# tool = language_tool_python.LanguageTool(
-#     'en-US',
-#     remote_server='http://127.0.0.1:8081'  # the port your server is actually running on
-# )
 
 
 WANDB_API_KEY = os.getenv("WANDB_API_KEY")
-wandb.login(key=WANDB_API_KEY)
+report_to = "none"
+
+if WANDB_API_KEY:
+    import wandb
+    wandb.login(key=WANDB_API_KEY)
+    wandb.init(project="grpo_training")
+    report_to = ["wandb"]
+
 torch.set_float32_matmul_precision('high')
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-wandb.init(project="grpo_training")
-
 sentinel_model = SentinelScorer()
 
-
-# path_of_google_madlad = "/cluster/scratch/arsood/madlad-google"
-# path_of_nllb = "/cluster/scratch/arsood/nllb-200"
-# path_of_helsinki = "/cluster/scratch/arsood/helsinki-nlp"
-# comet_model = CometScorer(path_of_google_madlad, path_of_helsinki, path_of_nllb)
 
 def strip_reasoning(text):
     # Remove the <think>...</think> tags and their content, which is not important for scoring and translation purposes.
@@ -80,11 +60,6 @@ def reward_sentinel(prompts, completions, **kwargs):
     for i in range(len(clean_completions)):
         score = sentinel_scores[i] / 3.0
         
-        #score += np.clip((rix[i] - 10) / 10, -1.0, 2.0)
-            
-        #if entropy[i] < 0.55:
-        #    score -= 3.0
-
         rewards.append(score)
         
     return rewards
@@ -210,10 +185,12 @@ def reward_semantic_similarity(prompts, completions, **kwargs):
             
     return rewards
 
-#path_of_model = f"/home/{os.getenv('USER')}/DeepLearningProject/qwen_1b"
-#path_of_model = "/work/scratch/fvilla/grpo_qwen1b_sentinel/checkpoint-6_old"
 
-path_of_model = "/cluster/scratch/arsood/qwen_1_b"
+
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+path_of_model = os.path.join(BASE_DIR, "model", "qwen_1_b")
 
 tokenizer = AutoTokenizer.from_pretrained(path_of_model)
 
@@ -221,33 +198,27 @@ if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left" 
 
+
 model = AutoModelForCausalLM.from_pretrained(
     path_of_model,
     torch_dtype=torch.bfloat16,
-    #torch_dtype="auto",
     device_map="auto",
-    #attn_implementation="flash_attention_2"
 )
 
 for param in model.parameters():
     param.requires_grad = True
 
-k = 198
-num_generations = 8
-batch_size = 16
-grad_accum_steps = 1
-repetition_penalty = 1.4
-temperature = 0.7
-version = 3
-learning_rate = 1e-5
+k = 198 # Number of minimum characters for phrases to be considered during training. 
+num_generations = 8 # Number of generations per prompt. 
+batch_size = 16 # Batch size for training. 
+grad_accum_steps = 1 # Gradient accumulation steps. 
+repetition_penalty = 1.4 # Repetition penalty. 
+temperature = 0.7 # Temperature for generation. 
+learning_rate = 1e-5 # Training Learning rate. 
 
 dataset_tatoeba = TatoebaDataset(tokenizer=tokenizer, filtered=True, k=k)
 dataset_wmt25 = Wmt25Dataset(tokenizer=tokenizer)
 concat_data = ConcatDataset([dataset_tatoeba])
-
-#print(len(concat_data))
-# dataloader = DataLoader(concat_data, shuffle = True, batch_size = 1)
-
 
 print("Starting training...")
 print("Parameters: ")
@@ -259,7 +230,6 @@ print(f"Gradient accumulation steps: {grad_accum_steps}")
 print(f"Minimum number of characters per considered phrase: {k}")
 print(f"Repetition penalty: {repetition_penalty}")
 print(f"Temperature: {temperature}")
-print(f"Version: {version}")
 
 training_args = GRPOConfig(
     learning_rate=learning_rate,
@@ -271,26 +241,22 @@ training_args = GRPOConfig(
     max_prompt_length=512,
     fp16=False,
     bf16=True,
-    output_dir=f"/cluster/scratch/arsood/DeepLearningProject/outputModels/grpo_qwen1b_comet_v{version}",                        
+    output_dir=os.path.join(BASE_DIR, "outputModels", "grpo_qwen1b_comet"),                        
     logging_steps=1,
     repetition_penalty=repetition_penalty,
     temperature=temperature,
     top_p=0.9,
-    report_to=["wandb"],
+    report_to=report_to,
     run_name="grpo_qwen1b_comet",
-    # save_strategy="epoch",
-    # save_total_limit=1,
-    # load_best_model_at_end=False,
-    # save_safetensors=True,
     save_strategy="steps",
     save_steps=50,
     save_total_limit=3,
     reward_weights=[
-        2,   # sentinel
-        1.5,   # relative_length
-        2,   # avoid illegal characters or too long
-        1.5,   # semantic_similarity
-        1.5,   # grammatical_correctness
+        2,      # sentinel / comet
+        1.5,    # relative_length
+        2,      # avoid illegal characters or too long
+        1.5,    # semantic_similarity
+        1.5,    # grammatical_correctness
     ],
 )
 
@@ -311,4 +277,3 @@ trainer = GRPOTrainer(
 trainer.train()
 
 print("Training completed.")
-print(f"Model saved to: {training_args.output_dir}")

@@ -29,22 +29,24 @@ from evaluation_utils import (
     free_memory
 )
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 MODEL_NAME="llama_sentinel_8b_temp=0.9_top_p=0.7_n_sample=100_num_gen=10"
 # MODEL = "/cluster/scratch/arsood/DeepLearningProject/outputModels/grpo_qwen4b_comet_v2/checkpoint-6174"
 # MODEL = "/cluster/scratch/arsood/best_qwen_4b_dl/artifacts/qwen4b-grpo-checkpoint-386-2hy4ani0:v0"
 # MODEL = "/cluster/scratch/arsood/qwen_4b_off"
-MODEL = "/cluster/scratch/arsood/best_llama_8b"
+MODEL = os.path.join(BASE_DIR, "best_llama_8b")
 # MODEL = "/cluster/scratch/arsood/DeepLearningProject/outputModels/grpo_qwen1b_comet_v3/checkpoint-3087"
-MODEL_JUDGE = "/cluster/scratch/arsood/qwen_4b_off"
+MODEL_JUDGE = os.path.join(BASE_DIR, "qwen_4b_off")
 DATASET_NAME="wmt19"
 BATCH_SIZE=50
 N_SAMPLES=100
 NUM_GENERATION = 10
-PATH_TO_SAVE=f"/cluster/scratch/arsood/save_result_dl/"
+PATH_TO_SAVE = os.path.join(BASE_DIR, "results")
 
-PATH_MADLAD="/cluster/scratch/arsood/madlad-google"
-PATH_NLLB="/cluster/scratch/arsood/nllb-200"
-PATH_HELSINKI="/cluster/scratch/arsood/helsinki-nlp"
+PATH_MADLAD = os.path.join(BASE_DIR, "madlad-google")
+PATH_NLLB = os.path.join(BASE_DIR, "nllb-200")
+PATH_HELSINKI = os.path.join(BASE_DIR, "helsinki-nlp")
 
 def generate_responses(model_name, dataset_name, n_samples, use_vllm=False):
     """

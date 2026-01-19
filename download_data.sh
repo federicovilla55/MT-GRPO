@@ -5,6 +5,7 @@ TATOEBA_URL="https://downloads.tatoeba.org/exports/per_language/eng/eng_sentence
 DATA_DIR="data"
 WMT_FILE_PATH="$DATA_DIR/wmt25-genmt-humeval.jsonl"
 TATOEBA_FILE_PATH="$DATA_DIR/eng_sentences.tsv"
+WMT19_DIR="$DATA_DIR/wmt19"
 
 mkdir -p "$DATA_DIR"
 
