@@ -13,16 +13,17 @@ Our results demonstrate that MT-GRPO produces high-quality examples that are mor
 
 ## Repository Structure
 
-- **`dataset/`**: Contains scripts for loading and processing the datasets (Tatoeba, WMT25, WMT19).
-- **`model/`**: Contains the scoring and specific model implementations.
+- `dataset/`: Contains scripts for loading and processing the datasets (Tatoeba, WMT25, WMT19).
+- `model/`: Contains the scoring and specific model implementations.
   - `sentinel.py`: Implements the Sentinel metric for difficulty scoring.
-  - `comet.py`: Implements COMET scoring.
-- **`ext/`**: Directory containing the code for *Sentinel*, the model for phrase hardness scoring.
-- **`train.py`**: The main training script using `GRPOTrainer` class.
-- **`evaluation_model.py`**: A comprehensive script for evaluating the model against various metrics and judges.
-- **`download_data.sh`**: Script to download the required datasets.
-- **`download_models.sh`**: Script to download the required translation models.
-- **`run_train.sh`**: Script to run the training script on a SLURM cluster.
+  - `comet.py`: Implements COMET scoring for Machine Translation evaluation.
+- `ext/`: Directory containing the effective code for the *Sentinel* model.
+- `results/`: Directory containing the results of the model evaluation on the WMT25 dataset.
+- `train.py`: main script used for training LLMs using the `GRPOTrainer` class.
+- `evaluation_model.py`: A comprehensive script for evaluating the model against various metrics and judges methods.
+- `download_data.sh`: Script used to download the required datasets.
+- `download_models.sh`: Script used to download the required translation models and base LLMs.
+- `run_train.sh`: Script used to run the training script on a SLURM cluster.
 
 ## Environment Setup
 

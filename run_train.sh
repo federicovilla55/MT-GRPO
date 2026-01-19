@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=TrainGRPO
-#SBATCH --account=dl
+#SBATCH --account=deep_learning
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=1
