@@ -9,19 +9,17 @@ TATOEBA_FILE_PATH="$DATA_DIR/eng_sentences.tsv"
 mkdir -p "$DATA_DIR"
 
 if curl -L "$WMT_URL" -o "$WMT_FILE_PATH"; then
-    echo "Successfully downloaded WMT data."
+    echo "Downloaded WMT data."
 else
     echo "ERROR: Failed to download WMT data."
+    rm -f "$WMT_FILE_PATH"
     exit 1
 fi
 
 if curl -L "$TATOEBA_URL" | bzip2 -d > "$TATOEBA_FILE_PATH"; then
-    echo "Successfully downloaded and decompressed Tatoeba data."
+    echo "Downloaded Tatoeba data."
 else
     echo "ERROR: Failed to download or decompress Tatoeba data."
     rm -f "$TATOEBA_FILE_PATH"
     exit 1
 fi
-
-echo "Result:"
-ls -lh "$DATA_DIR"
