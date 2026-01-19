@@ -1,5 +1,7 @@
 # DeepLearningProject
 
+![Model Pipeline](/assets/main-figure.png)
+
 ## Data Download
 
 To get started with the project, first download the data from the following links:
@@ -22,3 +24,11 @@ Create a Python virtual environment:
 python3 -m venv deep_learning
 source deep_learning/bin/activate
 pip install -r requirements.txt
+```
+
+## Model Checkpoints
+
+Model checkpoints are available in a [public polybox folder](https://polybox.ethz.ch/index.php/s/Zx7YNW2RPoMKJtk):
+
+- [llama-8b-sentinel](https://polybox.ethz.ch/index.php/s/syzEiYDJtt7Pxyy)
+- [qwen-4b-sentinel](https://polybox.ethz.ch/index.php/s/eFioWRGB8oW4fkj)
